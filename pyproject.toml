@@ -1,0 +1,7 @@
+[project]
+name = "gp-downloader"
+version = "0.1.0"
+description = "A Python-based Google Photos downloader built with Selenium."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["selenium>=4.33.0"]
