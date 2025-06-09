@@ -1,5 +1,5 @@
 [project]
-name = "gp-downloader"
+name = "gp-dl"
 version = "0.1.0"
 description = "A Python-based Google Photos downloader built with Selenium."
 readme = "README.md"
