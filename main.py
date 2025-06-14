@@ -1,4 +1,4 @@
-import os, time, argparse, re
+import os, time, argparse, re, sys, logging
 from selenium.webdriver import Chrome, ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -6,6 +6,19 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from zipfile import ZipFile
+
+BANNER = """
+  ██████   ██████         ██████  ██
+ ██       ██   ██        ██   ██ ██
+ ██   ███ ██████   █████ ██   ██ ██
+ ██    ██ ██             ██   ██ ██
+  ██████  ██             ██████  ███████
+
+     gp-dl — Google Photos Downloader
+     Download full-res albums using Selenium
+
+     Author: csd4ni3l  |  GitHub: https://github.com/csd4ni3l
+"""
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Download full-res images from a Google Photos album using Selenium.")
@@ -44,66 +57,111 @@ def find_zip_file():
         if file.endswith(".zip"):
             return file
 
+def find_crdownload_file():
+    for file in os.listdir("gp_temp"):
+        if file.endswith(".crdownload"):
+            return file
+
+def configure_logging():
+    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG)
+    for logger_to_disable in ["selenium", "urllib3"]:
+        logging.getLogger(logger_to_disable).propagate = False
+        logging.getLogger(logger_to_disable).disabled = True
+
 def main():
     args = parse_args()
     driver = setup_driver(profile_dir=args.profile_dir, headless=args.headless)
 
-    os.makedirs("gp_temp", exist_ok=True)
+    if not os.path.exists("gp_temp") or not os.path.isdir("gp_temp"):
+        logging.info("Creating gp_temp directory to temporarily store the downloaded zip files.")
+        os.makedirs("gp_temp", exist_ok=True)
 
     if not os.path.exists(args.output_dir) or not os.path.isdir(args.output_dir):
-        print("ERROR: Invalid output directory.")
+        logging.fatal("Invalid output directory. Please supply a valid and existing directory.")
         return
 
+    failed_album_count = 0
+    successful_album_count = 0
+    total_albums = len(args.album_urls)
+    all_start = time.perf_counter()
+    album_times = []
+
     for album_url in args.album_urls:
+        album_start = time.perf_counter()
+
         if re.match(r'^https?://photos\.app\.goo\.gl/[A-Za-z0-9]+$', album_url) is None:
-            print(f"Invalid album URL: {album_url}")
+            logging.error(f"Invalid album URL: {album_url}")
+            logging.info("Continuing with next album URL.")
+            failed_album_count += 1
             continue
 
-        print(f"Opening {album_url}")
+        logging.info(f"Now downloading {album_url}")
 
         driver.get(album_url)
 
-        print("Waiting for menu button...")
+        logging.debug("Waiting for menu button...")
         try:
             menu_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@aria-label="More options"]')))
         except TimeoutException:
-            print("ERROR: Could not find more options button in time.")
-            print("Continuing with next album.")
+            logging.error("Could not find more options button in time.")
+            logging.info("Continuing with next album URL.")
+            failed_album_count += 1
             continue
 
-        print("Clicking menu button...")
+        logging.debug("Clicking menu button...")
         menu_button.click()
 
-        print("Waiting for download all button...")
+        logging.debug("Waiting for download all button...")
         try:
             download_all_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@aria-label="Download all"]')))
         except TimeoutException:
-            print("ERROR: Could not find download all button in time.")
-            print("Continuing with next album.")
+            logging.error("Could not find download all button in time.")
+            logging.info("Continuing with next album.")
+            failed_album_count += 1
             continue
 
-        print("Clicking the download all button...")
+        logging.debug("Clicking the download all button...")
         download_all_button.click()
 
-        print("Waiting for a zip file to land in gp_temp...")
+        logging.debug("Waiting for Google to prepare the file...")
+        crdownload_file = None
+        while not crdownload_file:
+            crdownload_file = find_crdownload_file()
+            time.sleep(0.1)
+
+        logging.debug("Waiting for the download to finish...")
         zip_file = None
         while not zip_file:
             zip_file = find_zip_file()
             time.sleep(0.1)
 
-        print(f"Zip file downloaded, extracting to {args.output_dir}")
+        logging.debug(f"Zip file downloaded, extracting to {args.output_dir}")
 
         with ZipFile(f"gp_temp/{zip_file}") as opened_file:
             opened_file.extractall(args.output_dir)
 
-        print("Deleting zip file...")
+        logging.debug("Deleting zip file...")
         os.remove(f"gp_temp/{zip_file}")
 
-        print(f"Succesfully extracted to {args.output_dir}")
+        logging.info(f"Succesfully extracted zip file to {args.output_dir}")
 
+        successful_album_count += 1
+        album_times.append(time.perf_counter() - album_start)
+
+    logging.debug("Removing gp_temp directory.")
     os.removedirs("gp_temp")
+
+    print("\n===== DOWNLOAD STATISTICS =====")
+    print(f"Total albums given: {total_albums}")
+    print(f"Successfully downloaded: {successful_album_count}")
+    print(f"Failed downloads: {failed_album_count}")
+    print(f"Average time taken per album: {sum(album_times) / len(album_times):.2f} seconds")
+    print(f"Total time taken: {time.perf_counter() - all_start:.2f} seconds")
+    print("================================")
 
     driver.quit()
 
 if __name__ == '__main__':
+    print(BANNER)
+    configure_logging()
     main()
