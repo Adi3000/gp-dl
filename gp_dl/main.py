@@ -8,22 +8,22 @@ from selenium.webdriver.support import expected_conditions as EC
 from zipfile import ZipFile
 
 BANNER = """
-  ██████   ██████         ██████  ██
- ██       ██   ██        ██   ██ ██
- ██   ███ ██████   █████ ██   ██ ██
- ██    ██ ██             ██   ██ ██
-  ██████  ██             ██████  ███████
+██████   ██████         ██████  ██
+██       ██   ██        ██   ██ ██
+██   ███ ██████   █████ ██   ██ ██
+██    ██ ██             ██   ██ ██
+██████   ██             ██████  ███████
 
-     gp-dl — Google Photos Downloader
-     Download full-res albums using Selenium
+gp-dl — Google Photos Downloader
+Download full-res albums using Selenium
 
-     Author: csd4ni3l  |  GitHub: https://github.com/csd4ni3l
+Author: csd4ni3l  |  GitHub: https://github.com/csd4ni3l
 """
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Download full-res images from a Google Photos album using Selenium.")
-    parser.add_argument("--album-urls", nargs="+", required=True, help="Google Photos album URL")
-    parser.add_argument("--output-dir", required=True, help="Directory to save downloaded images")
+    parser.add_argument("--album-urls", nargs="+", required=True, help="Google Photos album URL(s)")
+    parser.add_argument("--output-dir", required=True, help="Directory to save downloaded albums")
     parser.add_argument("--driver-path", default=None, help="Custom Chrome driver path")
     parser.add_argument("--profile-dir", default=None, help="Chrome user data directory for session reuse")
     parser.add_argument("--headless", action="store_true", help="Run Chrome headlessly")
@@ -123,13 +123,13 @@ def main():
         logging.debug("Clicking the download all button...")
         download_all_button.click()
 
-        logging.debug("Waiting for Google to prepare the file...")
+        logging.info("Waiting for Google to prepare the file...")
         crdownload_file = None
         while not crdownload_file:
             crdownload_file = find_crdownload_file()
             time.sleep(0.1)
 
-        logging.debug("Waiting for the download to finish...")
+        logging.info("Waiting for the download to finish...")
         zip_file = None
         while not zip_file:
             zip_file = find_zip_file()
@@ -148,7 +148,7 @@ def main():
         successful_album_count += 1
         album_times.append(time.perf_counter() - album_start)
 
-    logging.debug("Removing gp_temp directory.")
+    logging.debug("Removing temporary gp_temp directory.")
     os.removedirs("gp_temp")
 
     print("\n===== DOWNLOAD STATISTICS =====")
@@ -161,7 +161,7 @@ def main():
 
     driver.quit()
 
-if __name__ == '__main__':
+def run_cli():
     print(BANNER)
     configure_logging()
     main()
