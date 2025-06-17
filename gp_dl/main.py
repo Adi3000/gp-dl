@@ -1,10 +1,11 @@
-import os, time, argparse, re, sys, logging
+import os, time, argparse, logging, sys
 from selenium.webdriver import Chrome, ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from statistics import median
 from zipfile import ZipFile
 
 BANNER = """
@@ -15,18 +16,27 @@ BANNER = """
 ██████   ██             ██████  ███████
 
 gp-dl — Google Photos Downloader
-Download full-res albums using Selenium
+Download full-resolution albums from Google Photos using Selenium
 
 Author: csd4ni3l  |  GitHub: https://github.com/csd4ni3l
 """
 
+LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "ERROR": logging.ERROR,
+    "FATAL": logging.FATAL,
+    "QUIET": 999999999
+}
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Download full-res images from a Google Photos album using Selenium.")
     parser.add_argument("--album-urls", nargs="+", required=True, help="Google Photos album URL(s)")
-    parser.add_argument("--output-dir", required=True, help="Directory to save downloaded albums")
+    parser.add_argument("--output-dir", required=True, help="The directory to save downloaded albums")
     parser.add_argument("--driver-path", default=None, help="Custom Chrome driver path")
-    parser.add_argument("--profile-dir", default=None, help="Chrome user data directory for session reuse")
+    parser.add_argument("--profile-dir", default=None, help="A Chrome user data directory for sessions, set this if you want to open non-shared links.")
     parser.add_argument("--headless", action="store_true", help="Run Chrome headlessly")
+    parser.add_argument("--log-level", default="INFO", help="Specifies what to include in log output. Available levels: debug, info, error, fatal")
     return parser.parse_args()
 
 def setup_driver(driver_path=None, profile_dir=None, headless=True):
@@ -62,14 +72,23 @@ def find_crdownload_file():
         if file.endswith(".crdownload"):
             return file
 
-def configure_logging():
-    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG)
+def configure_logging(log_level: str):
+    if not log_level.upper() in LOG_LEVELS:
+        print(f"Invalid logging level: {log_level}")
+        sys.exit(1)
+
+    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=LOG_LEVELS[log_level.upper()])
     for logger_to_disable in ["selenium", "urllib3"]:
         logging.getLogger(logger_to_disable).propagate = False
         logging.getLogger(logger_to_disable).disabled = True
 
-def main():
+def run_cli():
     args = parse_args()
+    
+    if not args.log_level.upper() == "QUIET":
+        print(BANNER)
+
+    configure_logging(args.log_level)
     driver = setup_driver(profile_dir=args.profile_dir, headless=args.headless)
 
     if not os.path.exists("gp_temp") or not os.path.isdir("gp_temp"):
@@ -80,8 +99,8 @@ def main():
         logging.fatal("Invalid output directory. Please supply a valid and existing directory.")
         return
 
-    failed_album_count = 0
-    successful_album_count = 0
+    failed_albums = []
+    successful_albums = []
     total_albums = len(args.album_urls)
     all_start = time.perf_counter()
     album_times = []
@@ -89,23 +108,19 @@ def main():
     for album_url in args.album_urls:
         album_start = time.perf_counter()
 
-        if re.match(r'^https?://photos\.app\.goo\.gl/[A-Za-z0-9]+$', album_url) is None:
-            logging.error(f"Invalid album URL: {album_url}")
-            logging.info("Continuing with next album URL.")
-            failed_album_count += 1
-            continue
-
-        logging.info(f"Now downloading {album_url}")
-
         driver.get(album_url)
+
+        album_title = driver.title.split(" -")[0]
+
+        logging.info(f"Now downloading {album_title} ({album_url})")
 
         logging.debug("Waiting for menu button...")
         try:
             menu_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@aria-label="More options"]')))
         except TimeoutException:
-            logging.error("Could not find more options button in time.")
+            logging.error("Could not find the 'more options' button in time.")
             logging.info("Continuing with next album URL.")
-            failed_album_count += 1
+            failed_albums.append(album_title)
             continue
 
         logging.debug("Clicking menu button...")
@@ -115,9 +130,9 @@ def main():
         try:
             download_all_button = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@aria-label="Download all"]')))
         except TimeoutException:
-            logging.error("Could not find download all button in time.")
+            logging.error("Could not find the 'download all' button in time.")
             logging.info("Continuing with next album.")
-            failed_album_count += 1
+            failed_albums.append(album_title)
             continue
 
         logging.debug("Clicking the download all button...")
@@ -145,23 +160,20 @@ def main():
 
         logging.info(f"Succesfully extracted zip file to {args.output_dir}")
 
-        successful_album_count += 1
+        successful_albums.append(album_title)
         album_times.append(time.perf_counter() - album_start)
 
     logging.debug("Removing temporary gp_temp directory.")
     os.removedirs("gp_temp")
 
-    print("\n===== DOWNLOAD STATISTICS =====")
-    print(f"Total albums given: {total_albums}")
-    print(f"Successfully downloaded: {successful_album_count}")
-    print(f"Failed downloads: {failed_album_count}")
-    print(f"Average time taken per album: {sum(album_times) / len(album_times):.2f} seconds")
-    print(f"Total time taken: {time.perf_counter() - all_start:.2f} seconds")
-    print("================================")
+    logging.info("")
+    logging.info("===== DOWNLOAD STATISTICS =====")
+    logging.info(f"Total albums given: {total_albums}")
+    logging.info(f"Successful albums ({len(successful_albums)}): {', '.join(successful_albums) or None}")
+    logging.info(f"Failed albums ({len(failed_albums)}): {', '.join(failed_albums) or 'None'}")
+    logging.info(f"Median time taken per album: {median(album_times or [0]):.2f} seconds")
+    logging.info(f"Average time taken per album: {sum(album_times or [0]) / len(album_times or [0]):.2f} seconds")
+    logging.info(f"Total time taken: {time.perf_counter() - all_start:.2f} seconds")
+    logging.info("================================")
 
     driver.quit()
-
-def run_cli():
-    print(BANNER)
-    configure_logging()
-    main()
