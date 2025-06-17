@@ -24,12 +24,7 @@ This tool automates the process of downloading photos from Google Photos albums 
 
 * Be aware of Google’s Terms of Service before using this tool.
 * It simulates human actions, but Google might not be happy about someone using this.
-
-## Requirements
-
-* Python 3.11+
-* Selenium
-* Chrome or Chromium + WebDriver (Auto-installed by Selenium if not found)
+* Selenium auto-downloads the Chrome driver if not found, which can take up space.
 
 ## Installation
 
@@ -37,4 +32,11 @@ This tool automates the process of downloading photos from Google Photos albums 
 
 ## Usage
 
+### CLI
 `gp-dl --album-urls ALBUM_URL ALBUM_URL2 --output-dir test --log-level info`
+
+### As a module
+```py
+from gp_dl import download_albums
+successful_albums, failed_albums, album_times = download_albums(["ALBUM_URL", "ALBUM_URL2"], output_dir="test")
+```

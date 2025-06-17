@@ -1,43 +1,11 @@
-import os, time, argparse, logging, sys
 from selenium.webdriver import Chrome, ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from statistics import median
 from zipfile import ZipFile
-
-BANNER = """
-██████   ██████         ██████  ██
-██       ██   ██        ██   ██ ██
-██   ███ ██████   █████ ██   ██ ██
-██    ██ ██             ██   ██ ██
-██████   ██             ██████  ███████
-
-gp-dl — Google Photos Downloader
-Download full-resolution albums from Google Photos using Selenium
-
-Author: csd4ni3l  |  GitHub: https://github.com/csd4ni3l
-"""
-
-LOG_LEVELS = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "ERROR": logging.ERROR,
-    "FATAL": logging.FATAL,
-    "QUIET": 999999999
-}
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Download full-res images from a Google Photos album using Selenium.")
-    parser.add_argument("--album-urls", nargs="+", required=True, help="Google Photos album URL(s)")
-    parser.add_argument("--output-dir", required=True, help="The directory to save downloaded albums")
-    parser.add_argument("--driver-path", default=None, help="Custom Chrome driver path")
-    parser.add_argument("--profile-dir", default=None, help="A Chrome user data directory for sessions, set this if you want to open non-shared links.")
-    parser.add_argument("--headless", action="store_true", help="Run Chrome headlessly")
-    parser.add_argument("--log-level", default="INFO", help="Specifies what to include in log output. Available levels: debug, info, error, fatal")
-    return parser.parse_args()
+import os, time, logging
 
 def setup_driver(driver_path=None, profile_dir=None, headless=True):
     chrome_options = Options()
@@ -71,41 +39,53 @@ def find_crdownload_file():
     for file in os.listdir("gp_temp"):
         if file.endswith(".crdownload"):
             return file
+        
+def download_albums(
+    album_urls: list[str],
+    output_dir: str,
+    driver_path: str | None = None,
+    profile_dir: str | None = None,
+    headless: bool = False,
+) -> tuple[list[str], list[str], list[float]]:
+    """
+    1) Download full-resolution images from one or more Google Photos albums using Selenium.
 
-def configure_logging(log_level: str):
-    if not log_level.upper() in LOG_LEVELS:
-        print(f"Invalid logging level: {log_level}")
-        sys.exit(1)
+    2) Return lists of successful and failed album names, as well as download durations.
 
-    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=LOG_LEVELS[log_level.upper()])
-    for logger_to_disable in ["selenium", "urllib3"]:
-        logging.getLogger(logger_to_disable).propagate = False
-        logging.getLogger(logger_to_disable).disabled = True
+    :type album_urls: list[str]
+    :param album_urls: One or more Google Photos album URLs to download images from.
 
-def run_cli():
-    args = parse_args()
-    
-    if not args.log_level.upper() == "QUIET":
-        print(BANNER)
+    :type output_dir: str
+    :param output_dir: Directory path where the downloaded albums will be saved.
 
-    configure_logging(args.log_level)
-    driver = setup_driver(profile_dir=args.profile_dir, headless=args.headless)
+    :type driver_path: str | None
+    :param driver_path: Path to a custom Chrome WebDriver binary. If None, Selenium will download it or choose the default system ChromeDriver.
+
+    :type profile_dir: str | None
+    :param profile_dir: Path to a Chrome user data directory. Use this to access private albums (non-shared links).
+
+    :type headless: bool
+    :param headless: Whether to run Chrome in headless mode. Defaults to False.
+
+    :returns: A tuple containing the names of the successful albums, names of the albums that failed to download, and the durations it took to download each album.
+    :rtype: tuple[list[str], list[str], list[float]]
+    """
+
+    driver = setup_driver(driver_path=driver_path, profile_dir=profile_dir, headless=headless)
 
     if not os.path.exists("gp_temp") or not os.path.isdir("gp_temp"):
         logging.info("Creating gp_temp directory to temporarily store the downloaded zip files.")
         os.makedirs("gp_temp", exist_ok=True)
 
-    if not os.path.exists(args.output_dir) or not os.path.isdir(args.output_dir):
+    if not os.path.exists(output_dir) or not os.path.isdir(output_dir):
         logging.fatal("Invalid output directory. Please supply a valid and existing directory.")
         return
 
     failed_albums = []
     successful_albums = []
-    total_albums = len(args.album_urls)
-    all_start = time.perf_counter()
     album_times = []
 
-    for album_url in args.album_urls:
+    for album_url in album_urls:
         album_start = time.perf_counter()
 
         driver.get(album_url)
@@ -150,30 +130,22 @@ def run_cli():
             zip_file = find_zip_file()
             time.sleep(0.1)
 
-        logging.debug(f"Zip file downloaded, extracting to {args.output_dir}")
+        logging.debug(f"Zip file downloaded, extracting to {output_dir}")
 
         with ZipFile(f"gp_temp/{zip_file}") as opened_file:
-            opened_file.extractall(args.output_dir)
+            opened_file.extractall(output_dir)
 
         logging.debug("Deleting zip file...")
         os.remove(f"gp_temp/{zip_file}")
 
-        logging.info(f"Succesfully extracted zip file to {args.output_dir}")
+        logging.info(f"Succesfully extracted zip file to {output_dir}")
 
         successful_albums.append(album_title)
         album_times.append(time.perf_counter() - album_start)
-
-    logging.debug("Removing temporary gp_temp directory.")
-    os.removedirs("gp_temp")
-
-    logging.info("")
-    logging.info("===== DOWNLOAD STATISTICS =====")
-    logging.info(f"Total albums given: {total_albums}")
-    logging.info(f"Successful albums ({len(successful_albums)}): {', '.join(successful_albums) or None}")
-    logging.info(f"Failed albums ({len(failed_albums)}): {', '.join(failed_albums) or 'None'}")
-    logging.info(f"Median time taken per album: {median(album_times or [0]):.2f} seconds")
-    logging.info(f"Average time taken per album: {sum(album_times or [0]) / len(album_times or [0]):.2f} seconds")
-    logging.info(f"Total time taken: {time.perf_counter() - all_start:.2f} seconds")
-    logging.info("================================")
+    
+        logging.debug("Removing temporary gp_temp directory.")
+        os.removedirs("gp_temp")
 
     driver.quit()
+
+    return successful_albums, failed_albums, album_times

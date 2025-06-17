@@ -1,6 +1,6 @@
 [project]
 name = "gp-dl"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Python-based Google Photos downloader built with Selenium."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.scripts]
-gp-dl = "gp_dl.main:run_cli"
+gp-dl = "gp_dl.cli:run_cli"
 
 [build-system]
 requires = ["setuptools>=61.0"]
