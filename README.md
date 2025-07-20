@@ -33,7 +33,7 @@ This tool automates the process of downloading photos from Google Photos albums 
 ## Usage
 
 ### CLI
-`gp-dl --album-urls ALBUM_URL ALBUM_URL2 --output-dir test --log-level info`
+`gp-dl --album-urls ALBUM_URL ALBUM_URL2 --output-dir test`
 
 ### As a module
 ```py
